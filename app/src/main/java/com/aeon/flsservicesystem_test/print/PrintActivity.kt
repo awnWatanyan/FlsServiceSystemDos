@@ -20,8 +20,11 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat.registerReceiver
+import androidx.lifecycle.lifecycleScope
 import com.aeon.flsservicesystem_test.PREFS_KEY_IS_LOGIN
 import com.aeon.flsservicesystem_test.R
+import com.aeon.flsservicesystem_test.tracking.GetLocationService
+import com.aeon.flsservicesystem_test.tracking.LocationData
 
 import com.pixplicity.easyprefs.library.Prefs
 import com.zebra.isv.tapbluetoothwifi.BluetoothDeviceArrayAdapter
@@ -36,6 +39,7 @@ import com.zebra.sdk.comm.Connection
 import com.zebra.sdk.comm.ConnectionException
 import com.zebra.sdk.printer.SGD
 import com.zebra.sdk.printer.ZebraPrinterFactory
+import kotlinx.coroutines.launch
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.HttpUrl
@@ -49,6 +53,7 @@ import kotlin.concurrent.thread
 
 class PrintActivity : AppCompatActivity() {
 
+
     companion object{
         private val bluetoothList : ArrayList<BluetoothDevice> = ArrayList();
         private var bluetoothDeviceName = "";
@@ -56,6 +61,8 @@ class PrintActivity : AppCompatActivity() {
         private var totalPage = 0;
         private var printSuccess = 200;
         private var printMessage = "";
+        private lateinit var getLocationService : GetLocationService
+        private lateinit var locationData: LocationData
         fun  getCurrentPageValue(): Int{
 
             return currentPage
@@ -90,11 +97,13 @@ class PrintActivity : AppCompatActivity() {
 
 
 
+
     private var uri: Uri? = null
 
     private val bluetoothAdapter: BluetoothAdapter? by lazy {
         BluetoothAdapter.getDefaultAdapter()
     }
+
 
     // private val desiredDeviceName = "YourDeviceName"
 
@@ -122,10 +131,25 @@ class PrintActivity : AppCompatActivity() {
         }
     }
 
+    @SuppressLint("MissingSuperCall")
+    override fun onBackPressed(){
+        //super.onBackPressed()
+
+    }
+
     @SuppressLint("MissingPermission")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        getLocationService = GetLocationService(this)
+
+        lifecycleScope.launch {
+            locationData = getLocationService.getCurrentLocationData()!!
+            if(locationData == null)
+            {
+                locationData = LocationData("0.0","0.0","0","0")
+            }
+        }
 
 
         setContentView(R.layout.activity_print)
@@ -164,6 +188,7 @@ class PrintActivity : AppCompatActivity() {
             btnPrint.visibility = View.INVISIBLE
         }
 
+
         if(uri != null) {
 
             textCountPrint.text = ""
@@ -199,6 +224,7 @@ class PrintActivity : AppCompatActivity() {
                                    , textView: TextView, textCount: TextView, btnBack: Button
                                    , btnPrint: Button, printerName : String? , pntToken : String?
                                    , printPage : Int, progress : ProgressBar,textPicUrl : TextView
+
     ) :
 
         AsyncTask<Void, String, String>() {
@@ -217,7 +243,6 @@ class PrintActivity : AppCompatActivity() {
         private var pb : ProgressBar = progress
         private var textPictureUrl : TextView = textPicUrl;
         private var printToken  = pntToken;
-
 
         private var printerNameData = printerName
 
@@ -488,8 +513,10 @@ class PrintActivity : AppCompatActivity() {
             pb.progress = progress[0]
         }
 
+
         @SuppressLint("SetTextI18n")
         override fun onPostExecute(result: String?) {
+
             pb.visibility= View.INVISIBLE;
             textMessage.text = result
             printMessage = result.toString()
@@ -518,12 +545,19 @@ class PrintActivity : AppCompatActivity() {
 
         private fun sendPrintResult(printResult: Boolean)
         {
+
             val client = OkHttpClient()
             val httpUrl = HttpUrl.Builder().scheme(com.aeon.flsservicesystem_test.scheme).host(com.aeon.flsservicesystem_test.callurl)
                 .addPathSegment(com.aeon.flsservicesystem_test.pathSeqment)
                 .addPathSegment("SubmitCollectorResult")
 
-            val requestBody = "{\"status\":\"$printSuccess\",\"msg\":\"$printMessage\",\"pntToken\":\"$printToken\"}"
+            val requestBody = "{\"status\":\"$printSuccess\",\"msg\":\"$printMessage\",\"pntToken\":\"$printToken\"," +
+                    "\"resultToken\":\"\"," +
+                    "\"trackingLatitude\":\"${locationData.trackingLatitude}\"," +
+                    "\"trackingLongitude\":\"${locationData.trackingLongitude}\"," +
+                    "\"trackingBattery\":\"${locationData.trackingBattery}\"," +
+                    "\"trackingSpeed\":\"${locationData.trackingSpeed}\"" +
+                    "}"
             val body = requestBody.toRequestBody("application/json".toMediaType())
 
             val request = Request.Builder()
@@ -575,7 +609,7 @@ class PrintActivity : AppCompatActivity() {
 
 
 
-        @SuppressLint("MissingPermission")
+        @SuppressLint("MissingPermission", "SuspiciousIndentation")
         private fun getPairedPrinters(deviceName: String): ArrayList<BluetoothDevice> {
             val mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
             val pairedDevices = mBluetoothAdapter.getBondedDevices()

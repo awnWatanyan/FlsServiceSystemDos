@@ -77,8 +77,10 @@ dependencies {
 
     implementation(libs.android.gms.playServiceLocation)
     implementation(libs.volley)
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
     implementation("androidx.browser:browser:1.4.0")
     implementation("com.squareup.okhttp3:okhttp:4.9.1")
+
 
     val work_version = "2.9.0"
     implementation("androidx.work:work-runtime-ktx:$work_version")

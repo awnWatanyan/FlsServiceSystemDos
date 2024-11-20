@@ -1,5 +1,6 @@
 package com.aeon.flsservicesystem_test
 
+import android.Manifest
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.annotation.SuppressLint
@@ -8,9 +9,12 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Rect
+import android.location.Location
 import android.net.Uri
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
@@ -30,12 +34,15 @@ import androidx.core.view.ViewCompat.animate
 import androidx.core.view.WindowInsetsCompat
 import androidx.room.Room
 import com.aeon.flsservicesystem_test.databinding.ActivityMainBinding
+//import com.aeon.flsservicesystem_test.tracking.GetLocationBroadcastReceiver
 import com.aeon.flsservicesystem_test.tracking.TrackingBroadcastReceiver
 import com.aeon.flsservicesystem_test.tracking.TrackingUpdateService
 import com.aeon.flsservicesystem_test.user_manager.DeviceData
 import com.aeon.flsservicesystem_test.user_manager.DeviceDatabase
 import com.aeon.flsservicesystem_test.user_manager.User
 import com.aeon.flsservicesystem_test.user_manager.UserDatabase
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationServices
 import com.pixplicity.easyprefs.library.Prefs
 import okhttp3.Call
 import okhttp3.Callback
@@ -58,7 +65,8 @@ class MainActivity : AppCompatActivity() {
     private val dataBaseUser = "database-user"
     private val dataBaseDevice = "database-device"
     private val packageName = "com.android.chrome"
-
+    private lateinit var fuesdLocationClient:FusedLocationProviderClient
+    val sharedPreferences by lazy { getSharedPreferences("CustomTabPrefs", MODE_PRIVATE) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -183,6 +191,8 @@ class MainActivity : AppCompatActivity() {
         if (checkLocationPermission()) {
             if (checkBackGroundLocationPermission()) {
                 val intent = Intent(this, TrackingUpdateService::class.java)
+                //val intentGetLo = Intent(this, GetLocationBroadcastReceiver::class.java)
+                //startForegroundService(intentGetLo)
                 startService(intent)
                 scheduleAlarm()
             } else {
@@ -398,42 +408,82 @@ class MainActivity : AppCompatActivity() {
         userDao.deleteAll()
     }
 
+    @SuppressLint("SuspiciousIndentation")
     private fun redirectToLogin(token: String) {
-        val httpUrl = HttpUrl.Builder().scheme(com.aeon.flsservicesystem_test.scheme).host(com.aeon.flsservicesystem_test.callurl)
-            .addPathSegment(com.aeon.flsservicesystem_test.pathSeqment)
-            .addPathSegment("Login")
-            .addQueryParameter("token", token)
 
-        val builder = CustomTabsIntent.Builder()
-        val params = CustomTabColorSchemeParams.Builder()
-        params.setToolbarColor(ContextCompat.getColor(this@MainActivity, R.color.white))
-       builder.setShareState(CustomTabsIntent.SHARE_STATE_OFF)
-        builder.setDefaultColorSchemeParams(params.build())
-        builder.setShowTitle(false)
-        val menuItemIntent = Intent(this, com.aeon.flsservicesystem_test.CustomTabMenuActivity::class.java)
-        builder.setInstantAppsEnabled(true)
-      //  val pendingIntent = PendingIntent.getActivity(this, 0, menuItemIntent
+
+    fuesdLocationClient = LocationServices.getFusedLocationProviderClient(this);
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestLocationPermission()
+        }
+        fuesdLocationClient.lastLocation.addOnSuccessListener { location:Location? ->
+        location?.let {
+            val latitude = it.latitude.toString()
+            val longitude = it.longitude.toString()
+            val speed = it.speed.toString()
+
+            val batteryStatus: Intent? = registerReceiver(null
+                , IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            var batteryPercent = "";
+            batteryStatus?.let {
+                val level = it.getIntExtra(BatteryManager.EXTRA_LEVEL,-1)
+                val scale = it.getIntExtra(BatteryManager.EXTRA_SCALE,-1)
+                batteryPercent = (level/scale.toFloat()*100).toString()
+            }
+            val httpUrl = HttpUrl.Builder().scheme(com.aeon.flsservicesystem_test.scheme).host(com.aeon.flsservicesystem_test.callurl)
+                .addPathSegment(com.aeon.flsservicesystem_test.pathSeqment)
+                .addPathSegment("Login")
+                .addQueryParameter("token", token)
+                .addQueryParameter("tracking_latitude", latitude)
+                .addQueryParameter("tracking_longitude", longitude)
+                .addQueryParameter("tracking_battery", batteryPercent)
+                .addQueryParameter("tracking_speed", speed)
+
+
+            val builder = CustomTabsIntent.Builder()
+            val params = CustomTabColorSchemeParams.Builder()
+            params.setToolbarColor(ContextCompat.getColor(this@MainActivity, R.color.white))
+            builder.setShareState(CustomTabsIntent.SHARE_STATE_OFF)
+            builder.setDefaultColorSchemeParams(params.build())
+            builder.setShowTitle(false)
+            val menuItemIntent = Intent(this, com.aeon.flsservicesystem_test.CustomTabMenuActivity::class.java)
+            builder.setInstantAppsEnabled(true)
+
+            //  val pendingIntent = PendingIntent.getActivity(this, 0, menuItemIntent
             //      , PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        //builder.addMenuItem("Custom Menu Item", pendingIntent)
+            //builder.addMenuItem("Custom Menu Item", pendingIntent)
 
 
-        val customBuilder = builder.build()
+            val customBuilder = builder.build()
 
-        if (this.isPackageInstalled(packageName)) {
+            if (this.isPackageInstalled(packageName)) {
 // if chrome is available use chrome custom tabs
-           // customBuilder.intent.setPackage(packageName)
-            customBuilder.intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                // customBuilder.intent.setPackage(packageName)
+                customBuilder.intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
 
-            customBuilder.launchUrl(this, Uri.parse(httpUrl.build().toString()))
-        } else {
+                customBuilder.launchUrl(this, Uri.parse(httpUrl.build().toString()))
+            } else {
 // if not available use WebView to launch the url
-            val browserIntent =
-                Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_BROWSER)
-            browserIntent.setData(Uri.parse(httpUrl.build().toString()))
-            startActivity(browserIntent)
+                val browserIntent =
+                    Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_BROWSER)
+                browserIntent.setData(Uri.parse(httpUrl.build().toString()))
+                startActivity(browserIntent)
 
 
-        }/**/
+            }
+
+        }
+    }
+
+
+       /**/
 
        /* val intent = Intent(this, WebActivity::class.java)
         // Pass the URL as an intent extra
@@ -524,7 +574,12 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+
+        // Reset the state if the tab was closed
+        setCustomTabState(false)
+
     }
+
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
@@ -551,5 +606,14 @@ class MainActivity : AppCompatActivity() {
         Runtime.getRuntime().exit(0) // Ensure the app is fully restarted
     }
 
+    private fun setCustomTabState(isOpen: Boolean) {
+        val editor = sharedPreferences.edit()
+        editor.putBoolean("isCustomTabOpen", isOpen)
+        editor.apply()
+    }
+
+    private fun isCustomTabOpen(): Boolean {
+        return sharedPreferences.getBoolean("isCustomTabOpen", false)
+    }
 
 }
